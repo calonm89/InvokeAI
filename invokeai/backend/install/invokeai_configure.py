@@ -21,7 +21,7 @@ from argparse import Namespace
 from enum import Enum
 from pathlib import Path
 from shutil import get_terminal_size
-from typing import get_type_hints
+from typing import get_type_hints, get_args, Any
 from urllib import request
 
 import npyscreen
@@ -50,10 +50,10 @@ from invokeai.frontend.install.model_install import addModelsForm, process_and_e
 
 # TO DO - Move all the frontend code into invokeai.frontend.install
 from invokeai.frontend.install.widgets import (
-    SingleSelectColumns,
+    SingleSelectColumnsSimple,
+    MultiSelectColumns,
     CenteredButtonPress,
     FileBox,
-    IntTitleSlider,
     set_min_terminal_size,
     CyclingForm,
     MIN_COLS,
@@ -73,6 +73,10 @@ warnings.filterwarnings("ignore")
 transformers.logging.set_verbosity_error()
 
 
+def get_literal_fields(field) -> list[Any]:
+    return get_args(get_type_hints(InvokeAIAppConfig).get(field))
+
+
 # --------------------------globals-----------------------
 
 config = InvokeAIAppConfig.get_config()
@@ -82,7 +86,11 @@ Model_dir = "models"
 Default_config_file = config.model_conf_path
 SD_Configs = config.legacy_conf_path
 
-PRECISION_CHOICES = ["auto", "float16", "float32"]
+PRECISION_CHOICES = get_literal_fields("precision")
+DEVICE_CHOICES = get_literal_fields("device")
+ATTENTION_CHOICES = get_literal_fields("attention_type")
+ATTENTION_SLICE_CHOICES = get_literal_fields("attention_slice_size")
+GENERATION_OPT_CHOICES = ["sequential_guidance", "force_tiled_decode", "lazy_offload"]
 GB = 1073741824  # GB in bytes
 HAS_CUDA = torch.cuda.is_available()
 _, MAX_VRAM = torch.cuda.mem_get_info() if HAS_CUDA else (0, 0)
@@ -309,10 +317,11 @@ class editOptsForm(CyclingForm, npyscreen.FormMultiPage):
         first_time = not (config.root_path / "invokeai.yaml").exists()
         access_token = HfFolder.get_token()
         window_width, window_height = get_terminal_size()
-        label = """Configure startup settings. You can come back and change these later. 
+        label = """Configure startup settings. You can come back and change these later.
 Use ctrl-N and ctrl-P to move to the <N>ext and <P>revious fields.
 Use cursor arrows to make a checkbox selection, and space to toggle.
 """
+        self.nextrely -= 1
         for i in textwrap.wrap(label, width=window_width - 6):
             self.add_widget_intelligent(
                 npyscreen.FixedText,
@@ -339,86 +348,147 @@ Use cursor arrows to make a checkbox selection, and space to toggle.
             use_two_lines=False,
             scroll_exit=True,
         )
-        self.nextrely += 1
-        self.add_widget_intelligent(
-            npyscreen.TitleFixedText,
-            name="GPU Management",
-            begin_entry_at=0,
-            editable=False,
-            color="CONTROL",
-            scroll_exit=True,
-        )
-        self.nextrely -= 1
-        self.free_gpu_mem = self.add_widget_intelligent(
-            npyscreen.Checkbox,
-            name="Free GPU memory after each generation",
-            value=old_opts.free_gpu_mem,
-            max_width=45,
-            relx=5,
-            scroll_exit=True,
-        )
-        self.nextrely -= 1
-        self.xformers_enabled = self.add_widget_intelligent(
-            npyscreen.Checkbox,
-            name="Enable xformers support",
-            value=old_opts.xformers_enabled,
-            max_width=30,
-            relx=50,
-            scroll_exit=True,
-        )
-        self.nextrely -= 1
-        self.always_use_cpu = self.add_widget_intelligent(
-            npyscreen.Checkbox,
-            name="Force CPU to be used on GPU systems",
-            value=old_opts.always_use_cpu,
-            relx=80,
-            scroll_exit=True,
-        )
+
+        # old settings for defaults
         precision = old_opts.precision or ("float32" if program_opts.full_precision else "auto")
+        device = old_opts.device
+        attention_type = old_opts.attention_type
+        attention_slice_size = old_opts.attention_slice_size
         self.nextrely += 1
         self.add_widget_intelligent(
             npyscreen.TitleFixedText,
-            name="Floating Point Precision",
+            name="Image Generation Options:",
+            editable=False,
+            color="CONTROL",
+            scroll_exit=True,
+        )
+        self.nextrely -= 2
+        self.generation_options = self.add_widget_intelligent(
+            MultiSelectColumns,
+            columns=3,
+            values=GENERATION_OPT_CHOICES,
+            value=[GENERATION_OPT_CHOICES.index(x) for x in GENERATION_OPT_CHOICES if getattr(old_opts, x)],
+            relx=30,
+            max_height=2,
+            max_width=80,
+            scroll_exit=True,
+        )
+
+        self.add_widget_intelligent(
+            npyscreen.TitleFixedText,
+            name="Floating Point Precision:",
             begin_entry_at=0,
             editable=False,
             color="CONTROL",
             scroll_exit=True,
         )
-        self.nextrely -= 1
+        self.nextrely -= 2
         self.precision = self.add_widget_intelligent(
-            SingleSelectColumns,
-            columns=3,
+            SingleSelectColumnsSimple,
+            columns=len(PRECISION_CHOICES),
             name="Precision",
             values=PRECISION_CHOICES,
             value=PRECISION_CHOICES.index(precision),
             begin_entry_at=3,
             max_height=2,
+            relx=30,
+            max_width=56,
+            scroll_exit=True,
+        )
+        self.add_widget_intelligent(
+            npyscreen.TitleFixedText,
+            name="Generation Device:",
+            begin_entry_at=0,
+            editable=False,
+            color="CONTROL",
+            scroll_exit=True,
+        )
+        self.nextrely -= 2
+        self.device = self.add_widget_intelligent(
+            SingleSelectColumnsSimple,
+            columns=len(DEVICE_CHOICES),
+            values=DEVICE_CHOICES,
+            value=[DEVICE_CHOICES.index(device)],
+            begin_entry_at=3,
+            relx=30,
+            max_height=2,
+            max_width=60,
+            scroll_exit=True,
+        )
+        self.add_widget_intelligent(
+            npyscreen.TitleFixedText,
+            name="Attention Type:",
+            begin_entry_at=0,
+            editable=False,
+            color="CONTROL",
+            scroll_exit=True,
+        )
+        self.nextrely -= 2
+        self.attention_type = self.add_widget_intelligent(
+            SingleSelectColumnsSimple,
+            columns=len(ATTENTION_CHOICES),
+            values=ATTENTION_CHOICES,
+            value=[ATTENTION_CHOICES.index(attention_type)],
+            begin_entry_at=3,
+            max_height=2,
+            relx=30,
             max_width=80,
             scroll_exit=True,
         )
-        self.max_cache_size = self.add_widget_intelligent(
-            IntTitleSlider,
-            name="RAM cache size (GB). Make this at least large enough to hold a single full model.",
-            value=old_opts.max_cache_size,
-            out_of=MAX_RAM,
-            lowest=3,
-            begin_entry_at=6,
+        self.attention_type.on_changed = self.show_hide_slice_sizes
+        self.attention_slice_label = self.add_widget_intelligent(
+            npyscreen.TitleFixedText,
+            name="Attention Slice Size:",
+            relx=5,
+            editable=False,
+            hidden=attention_type != "sliced",
+            color="CONTROL",
+            scroll_exit=True,
+        )
+        self.nextrely -= 2
+        self.attention_slice_size = self.add_widget_intelligent(
+            SingleSelectColumnsSimple,
+            columns=len(ATTENTION_SLICE_CHOICES),
+            values=ATTENTION_SLICE_CHOICES,
+            value=[ATTENTION_SLICE_CHOICES.index(attention_slice_size)],
+            relx=30,
+            hidden=attention_type != "sliced",
+            max_height=2,
+            max_width=110,
+            scroll_exit=True,
+        )
+        self.add_widget_intelligent(
+            npyscreen.TitleFixedText,
+            name="Model RAM cache size (GB). Make this at least large enough to hold a single full model.",
+            begin_entry_at=0,
+            editable=False,
+            color="CONTROL",
+            scroll_exit=True,
+        )
+        self.nextrely -= 1
+        self.ram = self.add_widget_intelligent(
+            npyscreen.Slider,
+            value=clip(old_opts.ram_cache_size, range=(3.0, MAX_RAM), step=0.5),
+            out_of=round(MAX_RAM),
+            lowest=0.0,
+            step=0.5,
+            relx=8,
             scroll_exit=True,
         )
         if HAS_CUDA:
             self.nextrely += 1
             self.add_widget_intelligent(
                 npyscreen.TitleFixedText,
-                name="VRAM cache size (GB). Reserving a small amount of VRAM will modestly speed up the start of image generation.",
+                name="Model VRAM cache size (GB). Reserving a small amount of VRAM will modestly speed up the start of image generation.",
                 begin_entry_at=0,
                 editable=False,
                 color="CONTROL",
                 scroll_exit=True,
             )
             self.nextrely -= 1
-            self.max_vram_cache_size = self.add_widget_intelligent(
+            self.vram = self.add_widget_intelligent(
                 npyscreen.Slider,
-                value=old_opts.max_vram_cache_size,
+                value=clip(old_opts.vram_cache_size, range=(0, MAX_VRAM), step=0.25),
                 out_of=round(MAX_VRAM * 2) / 2,
                 lowest=0.0,
                 relx=8,
@@ -426,7 +496,7 @@ Use cursor arrows to make a checkbox selection, and space to toggle.
                 scroll_exit=True,
             )
         else:
-            self.max_vram_cache_size = DummyWidgetValue.zero
+            self.vram_cache_size = DummyWidgetValue.zero
         self.nextrely += 1
         self.outdir = self.add_widget_intelligent(
             FileBox,
@@ -482,6 +552,11 @@ https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENS
             when_pressed_function=self.on_ok,
         )
 
+    def show_hide_slice_sizes(self, value):
+        show = ATTENTION_CHOICES[value[0]] == "sliced"
+        self.attention_slice_label.hidden = not show
+        self.attention_slice_size.hidden = not show
+
     def on_ok(self):
         options = self.marshall_arguments()
         if self.validate_field_values(options):
@@ -515,12 +590,9 @@ https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENS
         new_opts = Namespace()
 
         for attr in [
+            "ram",
+            "vram",
             "outdir",
-            "free_gpu_mem",
-            "max_cache_size",
-            "max_vram_cache_size",
-            "xformers_enabled",
-            "always_use_cpu",
         ]:
             setattr(new_opts, attr, getattr(self, attr).value)
 
@@ -533,6 +605,12 @@ https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/LICENS
         new_opts.hf_token = self.hf_token.value
         new_opts.license_acceptance = self.license_acceptance.value
         new_opts.precision = PRECISION_CHOICES[self.precision.value[0]]
+        new_opts.device = DEVICE_CHOICES[self.device.value[0]]
+        new_opts.attention_type = ATTENTION_CHOICES[self.attention_type.value[0]]
+        new_opts.attention_slice_size = ATTENTION_SLICE_CHOICES[self.attention_slice_size.value[0]]
+        generation_options = [GENERATION_OPT_CHOICES[x] for x in self.generation_options.value]
+        for v in GENERATION_OPT_CHOICES:
+            setattr(new_opts, v, v in generation_options)
 
         return new_opts
 
@@ -597,6 +675,16 @@ def default_user_selections(program_opts: Namespace) -> InstallSelections:
 
 
 # -------------------------------------
+def clip(value: float, range: tuple[float, float], step: float) -> float:
+    minimum, maximum = range
+    if value < minimum:
+        value = minimum
+    if value > maximum:
+        value = maximum
+    return round(value / step) * step
+
+
+# -------------------------------------
 def initialize_rootdir(root: Path, yes_to_all: bool = False):
     logger.info("Initializing InvokeAI runtime directory")
     for name in ("models", "databases", "text-inversion-output", "text-inversion-training-data", "configs"):
@@ -616,8 +704,6 @@ def initialize_rootdir(root: Path, yes_to_all: bool = False):
             path.mkdir(parents=True, exist_ok=True)
     path = dest / "core"
     path.mkdir(parents=True, exist_ok=True)
-
-    maybe_create_models_yaml(root)
 
 
 def maybe_create_models_yaml(root: Path):

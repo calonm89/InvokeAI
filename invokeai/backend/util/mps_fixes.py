@@ -191,7 +191,7 @@ class ChunkedSlicedAttnProcessor:
         assert value.shape[0] == 1
         assert hidden_states.shape[0] == 1
 
-        dtype = query.dtype
+        # dtype = query.dtype
         if attn.upcast_attention:
             query = query.float()
             key = key.float()
@@ -203,7 +203,7 @@ class ChunkedSlicedAttnProcessor:
         if attn.upcast_attention:
             out_item_size = 4
 
-        chunk_size = 2**29
+        chunk_size = 2 ** 29
 
         out_size = query.shape[1] * key.shape[1] * out_item_size
         chunks_count = min(query.shape[1], math.ceil((out_size - 1) / chunk_size))

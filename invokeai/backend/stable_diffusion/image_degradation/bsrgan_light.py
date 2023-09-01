@@ -399,7 +399,7 @@ def add_Gaussian_noise(img, noise_level1=2, noise_level2=25):
         D = np.diag(np.random.rand(3))
         U = orth(np.random.rand(3, 3))
         conv = np.dot(np.dot(np.transpose(U), D), U)
-        img = img + np.random.multivariate_normal([0, 0, 0], np.abs(L**2 * conv), img.shape[:2]).astype(np.float32)
+        img = img + np.random.multivariate_normal([0, 0, 0], np.abs(L ** 2 * conv), img.shape[:2]).astype(np.float32)
     img = np.clip(img, 0.0, 1.0)
     return img
 
@@ -417,7 +417,7 @@ def add_speckle_noise(img, noise_level1=2, noise_level2=25):
         D = np.diag(np.random.rand(3))
         U = orth(np.random.rand(3, 3))
         conv = np.dot(np.dot(np.transpose(U), D), U)
-        img += img * np.random.multivariate_normal([0, 0, 0], np.abs(L**2 * conv), img.shape[:2]).astype(np.float32)
+        img += img * np.random.multivariate_normal([0, 0, 0], np.abs(L ** 2 * conv), img.shape[:2]).astype(np.float32)
     img = np.clip(img, 0.0, 1.0)
     return img
 
@@ -577,14 +577,15 @@ def degradation_bsrgan_variant(image, sf=4, isp_model=None):
     hq: corresponding high-quality patch, size: (lq_patchsizexsf)X(lq_patchsizexsf)XC, range: [0, 1]
     """
     image = util.uint2single(image)
-    isp_prob, jpeg_prob, scale2_prob = 0.25, 0.9, 0.25
-    sf_ori = sf
+    jpeg_prob, scale2_prob = 0.9, 0.25
+    # isp_prob = 0.25  # uncomment with `if i== 6` block below
+    # sf_ori = sf  # uncomment with `if i== 6` block below
 
     h1, w1 = image.shape[:2]
     image = image.copy()[: w1 - w1 % sf, : h1 - h1 % sf, ...]  # mod crop
     h, w = image.shape[:2]
 
-    hq = image.copy()
+    # hq = image.copy()  # uncomment with `if i== 6` block below
 
     if sf == 4 and random.random() < scale2_prob:  # downsample1
         if np.random.rand() < 0.5:

@@ -6,6 +6,9 @@ import {
   MetadataAccumulatorInvocation,
 } from 'services/api/types';
 import {
+  CANVAS_INPAINT_GRAPH,
+  CANVAS_OUTPAINT_GRAPH,
+  CANVAS_COHERENCE_DENOISE_LATENTS,
   CLIP_SKIP,
   LORA_LOADER,
   MAIN_MODEL_LOADER,
@@ -67,7 +70,7 @@ export const addLoRAsToGraph = (
     };
 
     // add the lora to the metadata accumulator
-    if (metadataAccumulator) {
+    if (metadataAccumulator?.loras) {
       metadataAccumulator.loras.push({
         lora: { model_name, base_model },
         weight,
@@ -135,6 +138,22 @@ export const addLoRAsToGraph = (
           field: 'unet',
         },
       });
+
+      if (
+        graph.id &&
+        [CANVAS_INPAINT_GRAPH, CANVAS_OUTPAINT_GRAPH].includes(graph.id)
+      ) {
+        graph.edges.push({
+          source: {
+            node_id: currentLoraNodeId,
+            field: 'unet',
+          },
+          destination: {
+            node_id: CANVAS_COHERENCE_DENOISE_LATENTS,
+            field: 'unet',
+          },
+        });
+      }
 
       graph.edges.push({
         source: {
